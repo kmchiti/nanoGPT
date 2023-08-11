@@ -21,8 +21,8 @@ lm_head = torch.nn.Linear(config.n_embd, config.vocab_size, bias=False).to(devic
 decoder.train()
 lm_head.train()
 
-hidden_states = torch.randn(batch_size, 1, config.n_embd).to(device)
-targets = torch.randint(0, config.vocab_size, size=(batch_size, 1)).to(device)
+hidden_states = torch.randn(batch_size, config.block_size, config.n_embd).to(device)
+targets = torch.randint(0, config.vocab_size, size=(batch_size, config.block_size)).to(device)
 
 if __name__ == '__main__':
     for step in range(1000):
@@ -31,14 +31,14 @@ if __name__ == '__main__':
             quit()
         elif step >= warmup_steps:
             torch.cuda.cudart().cudaProfilerStart()
-            out = decoder(hidden_states)[0]
+            out = decoder(hidden_states)
             logits = lm_head(out)
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
             torch.cuda.nvtx.range_push("backward")
             loss.backward()
             torch.cuda.nvtx.range_pop()
         else:
-            out = decoder(hidden_states)[0]
+            out = decoder(hidden_states)
             logits = lm_head(out)
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
             loss.backward()
