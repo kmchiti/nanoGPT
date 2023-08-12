@@ -7,7 +7,7 @@ config.block_size = 1024
 config.vocab_size = 2048
 config.n_head = 12
 config.n_embd = 768
-batch_size = 256
+batch_size = 32
 warmup_steps = 10  # warmup_steps for profiler
 active_steps = 4  # active_steps for profiler
 if torch.cuda.is_available():
