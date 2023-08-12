@@ -36,9 +36,10 @@ if __name__ == '__main__':
         if step >= warmup_steps + active_steps:
             torch.cuda.cudart().cudaProfilerStop()
             quit()
-        elif step >= warmup_steps:
+        elif step == warmup_steps:
             set_profiler(decoder, profile=True)
             torch.cuda.cudart().cudaProfilerStart()
+        elif step >= warmup_steps:
             out = decoder(hidden_states)
             torch.cuda.nvtx.range_push("lm_head")
             logits = lm_head(out)
