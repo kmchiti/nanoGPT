@@ -53,17 +53,18 @@ class CausalSelfAttention(nn.Module):
         #     # causal mask to ensure that attention is only applied to the left in the input sequence
         self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size))
                              .view(1, 1, config.block_size, config.block_size))
+        self.profile = config.prof
 
     def forward(self, x):
         B, T, C = x.size()  # batch size, sequence length, embedding dimensionality (n_embd)
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
         # q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
-        torch.cuda.nvtx.range_push("QKV_projection")
+        if self.profile: torch.cuda.nvtx.range_push("QKV_projection")
         q = self.q_proj(x)
         k = self.k_proj(x)
         v = self.v_proj(x)
-        torch.cuda.nvtx.range_pop()
+        if self.profile: torch.cuda.nvtx.range_pop()
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
@@ -76,21 +77,21 @@ class CausalSelfAttention(nn.Module):
         #                                                          is_causal=True)
         # else:
         # manual implementation of attention
-        torch.cuda.nvtx.range_push("attention")
+        if self.profile: torch.cuda.nvtx.range_push("attention")
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
         att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
         att = F.softmax(att, dim=-1)
-        torch.cuda.nvtx.range_pop()
+        if self.profile: torch.cuda.nvtx.range_pop()
         att = self.attn_dropout(att)
-        torch.cuda.nvtx.range_push("attention_X_V")
+        if self.profile: torch.cuda.nvtx.range_push("attention_X_V")
         y = att @ v  # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
         y = y.transpose(1, 2).contiguous().view(B, T, C)  # re-assemble all head outputs side by side
-        torch.cuda.nvtx.range_pop()
+        if self.profile: torch.cuda.nvtx.range_pop()
 
         # output projection
-        torch.cuda.nvtx.range_push("output_projection")
+        if self.profile: torch.cuda.nvtx.range_push("output_projection")
         y = self.resid_dropout(self.c_proj(y))
-        torch.cuda.nvtx.range_pop()
+        if self.profile: torch.cuda.nvtx.range_pop()
         return y
 
 
@@ -102,15 +103,16 @@ class MLP(nn.Module):
         self.gelu = nn.GELU()
         self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias)
         self.dropout = nn.Dropout(config.dropout)
+        self.profile = config.prof
 
     def forward(self, x):
-        torch.cuda.nvtx.range_push("FC1")
+        if self.profile: torch.cuda.nvtx.range_push("FC1")
         x = self.c_fc(x)
-        torch.cuda.nvtx.range_pop()
+        if self.profile: torch.cuda.nvtx.range_pop()
         x = self.gelu(x)
-        torch.cuda.nvtx.range_push("FC2")
+        if self.profile: torch.cuda.nvtx.range_push("FC2")
         x = self.c_proj(x)
-        torch.cuda.nvtx.range_pop()
+        if self.profile: torch.cuda.nvtx.range_pop()
         x = self.dropout(x)
         return x
 
@@ -139,6 +141,7 @@ class GPTConfig:
     n_embd: int = 768
     dropout: float = 0.0
     bias: bool = True  # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+    prof: bool = False  # True: profiling
 
 
 class GPT(nn.Module):

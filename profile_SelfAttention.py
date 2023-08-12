@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from model import Block, GPTConfig
+from model import CausalSelfAttention, MLP
 
 config = GPTConfig()
 config.block_size = 1024
@@ -16,6 +17,12 @@ else:
     # raise "CUDA not available"
     device = torch.device('cpu')
 
+def set_profiler(module, profile=True):
+    for name, m in module.named_modules():
+        if isinstance(m, CausalSelfAttention) or isinstance(m, MLP):
+            m.profile = profile
+
+
 decoder = Block(config).to(device)
 lm_head = torch.nn.Linear(config.n_embd, config.vocab_size, bias=False).to(device)
 decoder.train()
@@ -30,9 +37,12 @@ if __name__ == '__main__':
             torch.cuda.cudart().cudaProfilerStop()
             quit()
         elif step >= warmup_steps:
+            set_profiler(decoder, profile=True)
             torch.cuda.cudart().cudaProfilerStart()
             out = decoder(hidden_states)
+            torch.cuda.nvtx.range_push("lm_head")
             logits = lm_head(out)
+            torch.cuda.nvtx.range_pop()
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
             torch.cuda.nvtx.range_push("backward")
             loss.backward()
