@@ -19,6 +19,7 @@ from transformers import get_scheduler
 hf_home = Path.home() / "scratch" / "hf_home"  # change this to your own path
 hf_home.mkdir(parents=True, exist_ok=True)
 os.environ["HF_HOME"] = str(hf_home)
+os.environ["HF_DATASETS_CACHE"] = str(hf_home / "datasets")
 
 checkpoint = "meta-llama/Llama-2-7b-chat-hf"
 
@@ -44,11 +45,10 @@ tokenizer = AutoTokenizer.from_pretrained(checkpoint, use_fast=True)
 
 raw_datasets = DatasetDict(
     {
-        "train": ds_train.shuffle(seed=42).select(range(50000)),
-        "valid": ds_valid.shuffle(seed=42).select(range(500))
+        "train": ds_train.shuffle(seed=args.seed).select(range(50000)),
+        "valid": ds_valid.shuffle(seed=args.seed).select(range(500))
     }
 )
-
 
 def tokenize(element):
     outputs = tokenizer(
