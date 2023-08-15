@@ -31,8 +31,8 @@ parser.add_argument(
     '--num_epochs', default=1, type=int,
     help='number of epochs, default: 1')
 parser.add_argument(
-    '--context_length', default=256, type=int,
-    help='context length, default: 256')
+    '--context_length', default=2048, type=int,
+    help='context length, default: 2048')
 parser.add_argument(
     '--seed', default=1347, type=int,
     help='context length, default: 1347')
@@ -109,10 +109,9 @@ def train(batch):
 print(num_training_steps)
 
 model.train()
-# training loop wrapped with profiler object
 with torch.profiler.profile(
         schedule=torch.profiler.schedule(wait=1, warmup=5, active=1, repeat=3),
-        # on_trace_ready=torch.profiler.tensorboard_trace_handler('./logs'),
+        on_trace_ready=torch.profiler.tensorboard_trace_handler('./logs_Llama_7b'),
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
         record_shapes=True,
         profile_memory=True,
@@ -125,5 +124,4 @@ with torch.profiler.profile(
         train(batch_data)
         prof.step()  # Need to call this at the end of each step
 
-prof.export_chrome_trace("trace_Llama_7b.json")
-
+# prof.export_chrome_trace("trace_Llama_7b.json")
