@@ -70,8 +70,9 @@ model.tie_weights()
 print("loading dataset")
 ds_train = load_dataset("huggingface-course/codeparrot-ds-train", split="train")
 ds_valid = load_dataset("huggingface-course/codeparrot-ds-valid", split="validation")
-# tokenizer = AutoTokenizer.from_pretrained(checkpoint, use_fast=True)
 tokenizer = LlamaTokenizer.from_pretrained(checkpoint)
+tokenizer.pad_token = tokenizer.eos_token
+tokenizer.padding_side = "right"
 
 raw_datasets = DatasetDict(
     {
