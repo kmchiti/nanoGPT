@@ -108,8 +108,10 @@ if __name__ == '__main__':
     ds_train = load_dataset("huggingface-course/codeparrot-ds-train", split="train")
     ds_valid = load_dataset("huggingface-course/codeparrot-ds-valid", split="validation")
     tokenizer = LlamaTokenizer.from_pretrained(checkpoint)
-    tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "right"
+    if tokenizer.pad_token is None:
+        print("Add padding token")
+        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+        tokenizer.padding_side = "right"
 
     raw_datasets = DatasetDict(
         {
