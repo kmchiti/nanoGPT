@@ -5,7 +5,7 @@ from datasets import load_dataset, DatasetDict
 from transformers import DataCollatorForLanguageModeling
 from torch.utils.data import DataLoader
 
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, LlamaTokenizer
 from transformers import set_seed
 
 import torch
@@ -15,13 +15,10 @@ import time
 
 from transformers import AdamW
 from transformers import get_scheduler
+from accelerate import init_empty_weights, dispatch_model, infer_auto_device_map, load_checkpoint_and_dispatch
 
 hf_home = Path.home() / "scratch" / "hf_home"  # change this to your own path
-hf_home.mkdir(parents=True, exist_ok=True)
-os.environ["HF_HOME"] = str(hf_home)
-os.environ["HF_DATASETS_CACHE"] = str(hf_home / "datasets")
-
-checkpoint = "meta-llama/Llama-2-7b-chat-hf"
+checkpoint = "decapoda-research/llama-7b-hf"
 
 parser = argparse.ArgumentParser(
     description='Profile different multi-head attention configurations')
@@ -32,16 +29,49 @@ parser.add_argument(
     '--num_epochs', default=1, type=int,
     help='number of epochs, default: 1')
 parser.add_argument(
-    '--context_length', default=2048, type=int,
-    help='context length, default: 2048')
+    '--context_length', default=1024, type=int,
+    help='context length, default: 1024')
 parser.add_argument(
     '--seed', default=1347, type=int,
     help='context length, default: 1347')
 
 args = parser.parse_args()
+set_seed(args.seed)
+
+print("loading model:", checkpoint)
+config = AutoConfig.from_pretrained(checkpoint, dtype=torch.bfloat16)
+# Initializes an empty shell with the model. This is instant and does not use any memory.
+with init_empty_weights():
+    model = AutoModelForCausalLM.from_config(config)
+
+# Initialize the model under the previous context manager breaks the tied weights. So, we need to retie them.
+model.tie_weights()
+device_map = infer_auto_device_map(
+    model,
+    max_memory={0: "80GB", "cpu": "20GB"},
+    no_split_module_classes=["LlamaDecoderLayer"],
+    dtype='float16',
+)
+load_checkpoint_and_dispatch(
+    model,
+    f"{hf_home}/hub/models--decapoda-research--llama-7b-hf/snapshots/5f98eefcc80e437ef68d457ad7bf167c2c6a1348/",
+    device_map=device_map,
+    dtype='float16',
+    offload_folder=f"/Tmp/slurm.3266104.0/offload",
+)
+model.tie_weights()
+
+# model = AutoModelForCausalLM.from_pretrained(checkpoint)
+# if torch.cuda.is_available():
+#     device = torch.device('cuda')
+# else:
+#     raise "CUDA not available"
+
+print("loading dataset")
 ds_train = load_dataset("huggingface-course/codeparrot-ds-train", split="train")
 ds_valid = load_dataset("huggingface-course/codeparrot-ds-valid", split="validation")
-tokenizer = AutoTokenizer.from_pretrained(checkpoint, use_fast=True)
+# tokenizer = AutoTokenizer.from_pretrained(checkpoint, use_fast=True)
+tokenizer = LlamaTokenizer.from_pretrained(checkpoint)
 
 raw_datasets = DatasetDict(
     {
@@ -49,6 +79,7 @@ raw_datasets = DatasetDict(
         "valid": ds_valid.shuffle(seed=args.seed).select(range(500))
     }
 )
+
 
 def tokenize(element):
     outputs = tokenizer(
@@ -78,13 +109,6 @@ eval_dataloader = DataLoader(
     tokenized_datasets["valid"], batch_size=args.batch_size, collate_fn=data_collator
 )
 
-set_seed(args.seed)
-model = AutoModelForCausalLM.from_pretrained(checkpoint)
-if torch.cuda.is_available():
-    device = torch.device('cuda')
-else:
-    raise "CUDA not available"
-
 optimizer = AdamW(model.parameters(), lr=5e-5)
 num_training_steps = args.num_epochs * len(train_dataloader)
 lr_scheduler = get_scheduler(
@@ -106,8 +130,8 @@ def train(batch):
     optimizer.zero_grad()
 
 
+print("strating training")
 print(num_training_steps)
-
 model.train()
 with torch.profiler.profile(
         schedule=torch.profiler.schedule(wait=1, warmup=5, active=1, repeat=3),
