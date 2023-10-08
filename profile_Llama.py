@@ -12,6 +12,7 @@ import torch
 import argparse
 import numpy as np
 import time
+import nvidia_smi
 
 from transformers import AdamW
 from transformers import get_scheduler
@@ -61,6 +62,8 @@ if __name__ == '__main__':
     set_seed(args.seed)
 
     print("loading model:", checkpoint)
+    nvidia_smi.nvmlInit()
+    handle = nvidia_smi.nvmlDeviceGetHandleByIndex(0)
     config = AutoConfig.from_pretrained(checkpoint, dtype=torch.float16)
     # Initializes an empty shell with the model. This is instant and does not use any memory.
     with init_empty_weights():
@@ -83,6 +86,8 @@ if __name__ == '__main__':
     )
     model.tie_weights()
     model.to('cuda')
+    res = nvidia_smi.nvmlDeviceGetUtilizationRates(handle)
+    print(f'loaded model in gpu, gpu: {res.gpu}%, gpu-mem: {res.memory}%')
 
     print("random dataset")
     tokenized_datasets = torch.randint(0, 32000, (1000, args.context_length))
@@ -119,6 +124,8 @@ if __name__ == '__main__':
             if step >= (1 + args.warmup_steps + args.active_steps) * args.repeat:
                 break
             train(batch_data)
+            res = nvidia_smi.nvmlDeviceGetUtilizationRates(handle)
+            print(f'gpu: {res.gpu}%, gpu-mem: {res.memory}%')
             prof.step()  # Need to call this at the end of each step
     print("finish PyTorch profiler")
 
